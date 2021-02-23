@@ -1,38 +1,32 @@
 import base64
 import datetime
-import html
 import json
 import os
 import queue
 import re
-import subprocess
 import sys
 import threading
 import time
 import traceback
 import urllib.parse
 import urllib.request
-from binascii import hexlify as hx
-from binascii import unhexlify as uhx
-from contextlib import closing
 
-import colorama
 import requests
 import zstandard
 from tqdm import tqdm
 
 import Fs
 import Fs.Type
-from Fs import Cnmt, Nca, Nsp, Pfs0, Rom
+from Fs import Cnmt, Nca, Nsp
 from Fs.Pfs0 import Pfs0Stream
-from nut import (Config, Keys, Nsps, NszDecompressor, Print, Status, Title,
-                 Titles, aes128)
+from nut import Config, Nsps, NszDecompressor, Print, Status, Title, \
+	Titles
 
 try:
 	import cdn
 	import cdn.Shogun
 	hasCdn = True
-except BaseException:
+except ImportError:
 	hasCdn = False
 
 from ganymede import Ganymede
@@ -193,14 +187,14 @@ def compress(filePath, compressionLevel=19, outputDir=None):
 
 				nspf.seek(0)
 				h = nspf.read(ncaHeaderSize)
-				#crypto = aes128.AESXTS(uhx(Keys.get('header_key')))
-				#d = crypto.decrypt(h)
+				# crypto = aes128.AESXTS(uhx(Keys.get('header_key')))
+				# d = crypto.decrypt(h)
 
 				# if d[0x200:0x204] == b'NCA3':
-				#	d = d[0:0x200] + b'NCZ3' + d[0x204:]
-				#	h = crypto.encrypt(d)
+				# 	d = d[0:0x200] + b'NCZ3' + d[0x204:]
+				# 	h = crypto.encrypt(d)
 				# else:
-				#	raise IOError('unknown NCA magic')
+				# 	raise IOError('unknown NCA magic')
 
 				# self.partition(0x0, 0xC00, self.header, Fs.Type.Crypto.XTS, uhx(Keys.get('header_key')))
 				f.write(h)
@@ -234,9 +228,11 @@ def compress(filePath, compressionLevel=19, outputDir=None):
 				bar.add(ncaHeaderSize)
 
 				for section in sections:
-					#print('offset: %x\t\tsize: %x\t\ttype: %d\t\tiv%s' % (section.offset, section.size, section.cryptoType, str(hx(section.cryptoCounter))))
-					o = nspf.partition(offset=section.offset, size=section.size, n=None, cryptoType=section.cryptoType,
-									   cryptoKey=section.cryptoKey, cryptoCounter=bytearray(section.cryptoCounter), autoOpen=True)
+					# print('offset: %x\t\tsize: %x\t\ttype: %d\t\tiv%s' % (section.offset, section.size, section.cryptoType, str(hx(section.cryptoCounter))))
+					o = nspf.partition(
+						offset=section.offset, size=section.size, n=None, cryptoType=section.cryptoType,
+						cryptoKey=section.cryptoKey, cryptoCounter=bytearray(section.cryptoCounter), autoOpen=True,
+					)
 
 					while not o.eof():
 						buffer = o.read(CHUNK_SZ)
@@ -286,7 +282,7 @@ def compressWorker(q, level, output, totalStatus):
 				nsp.move(forceNsp=True)
 				Nsps.files[nsp.path] = nsp
 				Nsps.save()
-		except queue.Empty as e:
+		except queue.Empty:
 			return
 		except BaseException as e:
 			Print.info('COMPRESS WORKER EXCEPTION: ' + str(e))
@@ -386,7 +382,7 @@ def decompressWorker(q, output, totalStatus):
 				i = Nsp(path)
 				i.move()
 
-		except queue.Empty as e:
+		except queue.Empty:
 			return
 		except BaseException as e:
 			Print.info('DECOMPRESS WORKER EXCEPTION: ' + str(e))
@@ -570,7 +566,7 @@ def updateTitleDb(force=False):
 
 	try:
 		with open('titledb/db.bin', 'wb') as f:
-			bytes = download('http://tinfoil.media/repo/db/db.bin', f, checkSize=False)
+			download('http://tinfoil.media/repo/db/db.bin', f, checkSize=False)
 
 		decompressZstd('titledb/db.bin', 'titledb/db.nza')
 		container = Fs.Nsp('titledb/db.nza')
@@ -635,7 +631,7 @@ def scan():
 	global hasScanned
 
 	# if hasScanned:
-	#	return
+	# 	return
 	hasScanned = True
 	initTitles()
 	initFiles()
@@ -727,7 +723,7 @@ def _ftpsync(url):
 
 	for path in fileList:
 		try:
-			#print('checking ' + path)
+			# print('checking ' + path)
 			nsp = Fs.Nsp()
 			nsp.setPath(urllib.parse.unquote(path))
 			nsp.downloadPath = path
@@ -735,8 +731,7 @@ def _ftpsync(url):
 			if not nsp.titleId:
 				continue
 
-			if not Titles.contains(nsp.titleId) or (not len(Titles.get(nsp.titleId).getFiles(
-					path[-3:])) and Titles.get(nsp.titleId).isActive(skipKeyCheck=True)):
+			if not Titles.contains(nsp.titleId) or (not len(Titles.get(nsp.titleId).getFiles(path[-3:])) and Titles.get(nsp.titleId).isActive(skipKeyCheck=True)):
 				if path[-3:] == 'nsx':
 					if len(Titles.get(nsp.titleId).getFiles('nsp')) or len(Titles.get(nsp.titleId).getFiles('nsz')):
 						continue
@@ -825,9 +820,9 @@ def organize():
 	# scan()
 	Print.info('organizing')
 	# for k, f in Nsps.files.items():
-	#print('moving ' + f.path)
-	#Print.info(str(f.hasValidTicket) +' = ' + f.path)
-	#	f.move()
+	# 	print('moving ' + f.path)
+	# 	Print.info(str(f.hasValidTicket) + ' = ' + f.path)
+	# 	f.move()
 
 	for id, t in Titles.data().items():
 		files = {}
@@ -901,8 +896,9 @@ def updateVersions(force=True):
 	i = 0
 	for k, t in Titles.items():
 		if force or t.version is None:
-			if (t.isDLC or t.isUpdate or Config.download.base) and (not t.isDLC or Config.download.DLC) and (not t.isDemo or Config.download.demo) and (not t.isUpdate or Config.download.update) and (
-					t.key or Config.download.sansTitleKey) and (len(Config.titleWhitelist) == 0 or t.id in Config.titleWhitelist) and t.id not in Config.titleBlacklist:
+			if (t.isDLC or t.isUpdate or Config.download.base) and (not t.isDLC or Config.download.DLC) and (not t.isDemo or Config.download.demo) and \
+				(not t.isUpdate or Config.download.update) and (t.key or Config.download.sansTitleKey) and \
+				(len(Config.titleWhitelist) == 0 or t.id in Config.titleWhitelist) and t.id not in Config.titleBlacklist:
 				v = t.lastestVersion(True)
 				Print.info("%s[%s] v = %s" % (str(t.name), str(t.id), str(v)))
 
@@ -1058,7 +1054,7 @@ def downloadFile(url, fPath):
 
 	if fSize >= 10000:
 		s = Status.create(fSize, desc=fName, unit='B')
-		#s.id = titleId.upper()
+		# s.id = titleId.upper()
 		s.add(dlded)
 		for chunk in r.iter_content(chunkSize):
 			f.write(chunk)
@@ -1073,7 +1069,7 @@ def downloadFile(url, fPath):
 		dlded += len(r.content)
 
 	# if fSize != 0 and dlded != fSize:
-	#	raise ValueError('Downloaded data is not as big as expected (%s/%s)!' % (dlded, fSize))
+	# 	raise ValueError('Downloaded data is not as big as expected (%s/%s)!' % (dlded, fSize))
 
 	f.close()
 	Print.debug('\r\nSaved to %s!' % f.name)
@@ -1090,11 +1086,11 @@ def loadNcaData():
 			for titleId, j in tmpData.items():
 				cnmtData[titleId] = {}
 				for version, data in j.items():
-					#version = str(version)
-					#cnmtData[titleId][version] = CnmtFile(obj = data)
+					# version = str(version)
+					# cnmtData[titleId][version] = CnmtFile(obj = data)
 					getCnmt(titleId, version, data)
 
-			#cnmtData = tmpData
+			# cnmtData = tmpData
 	except BaseException:
 		raise
 
@@ -1528,7 +1524,7 @@ def downloadAll(wait=True):
 
 		if Titles.queue.size() > 0:
 			Titles.save()
-			#status = Status.create(Titles.queue.size(), 'Total Download')
+			# status = Status.create(Titles.queue.size(), 'Total Download')
 
 			if Config.threads <= 1:
 				activeDownloads.append(1)
@@ -1546,6 +1542,6 @@ def downloadAll(wait=True):
 	Print.info('Downloads finished')
 
 	# if status:
-	#	status.close()
+	# 	status.close()
 
 	Print.info('DownloadAll finished')
